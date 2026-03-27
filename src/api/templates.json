@@ -1,0 +1,24 @@
+[
+  {
+    "templateId": 1,
+    "fieldName": "案件处理审批表 (线索环节)",
+    "taskAttrList": [
+      { "id": 1, "templateId": 1, "fieldType": 2, "fieldName": "申请事项", "fieldAttr": "Params1Fileds", "required": true },
+      { "id": 2, "templateId": 1, "fieldType": 2, "fieldName": "案源", "fieldAttr": "Params2Fileds", "required": true },
+      { "id": 3, "templateId": 1, "fieldType": 2, "fieldName": "案由", "fieldAttr": "Params3Fileds", "required": true },
+      { "id": 4, "templateId": 1, "fieldType": 1, "fieldName": "当事人姓名", "fieldAttr": "Params4Fileds", "required": true },
+      { "id": 5, "templateId": 1, "fieldType": 1, "fieldName": "身份证号码", "fieldAttr": "Params5Fileds", "required": true },
+      { "id": 6, "templateId": 1, "fieldType": 1, "fieldName": "单位名称", "fieldAttr": "Params6Fileds", "required": true },
+      { "id": 7, "templateId": 1, "fieldType": 1, "fieldName": "法定代表人", "fieldAttr": "Params7Fileds", "required": true },
+      { "id": 8, "templateId": 1, "fieldType": 2, "fieldName": "简要案情", "fieldAttr": "Params11Fileds", "required": true }
+    ]
+  },
+  {
+    "templateId": 3,
+    "fieldName": "证据清单表",
+    "taskAttrList": [
+      { "id": 11, "templateId": 3, "fieldType": 3, "fieldName": "登记日期", "fieldAttr": "evidenceDate", "required": true },
+      { "id": 12, "templateId": 3, "fieldType": 6, "fieldName": "证据清单", "fieldAttr": "Params1Fileds", "required": true }
+    ]
+  }
+]
