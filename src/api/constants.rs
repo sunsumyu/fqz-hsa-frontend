@@ -26,6 +26,8 @@ pub enum PunishStatus {
     Execution = 1500,
     /// 结案 (Closed)
     Closed = 1600,
+    /// 待结案 (Wait Close)
+    WaitClose = 1700,
     /// 待预检 (Wait Pre-Audit)
     WaitPreAudit = 130,
 }
@@ -46,13 +48,15 @@ impl PunishStatus {
             Self::Decision => "处罚决定",
             Self::Execution => "处罚执行",
             Self::Closed => "已结案",
+            Self::WaitClose => "待结案归档",
         }
     }
 
     pub fn to_class(&self) -> &'static str {
         match self {
             Self::WaitPreAudit | Self::WaitFiling | Self::ApprovalInProgress => "status-init",
-            Self::Investigation | Self::LegalReview | Self::WaitNotification => "status-process",
+            Self::Investigation | Self::LegalReview | Self::WaitNotification | Self::Hearing => "status-process",
+            Self::Decision | Self::Execution | Self::WaitClose => "status-active",
             Self::Suspended | Self::Terminated => "status-error",
             Self::Closed => "status-success",
             _ => "status-init",

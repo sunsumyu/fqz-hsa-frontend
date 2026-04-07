@@ -10,6 +10,12 @@ pub fn Sidebar() -> impl IntoView {
             </div>
             <nav class="menu-list">
                 <div class="menu-group">
+                    <div class="group-title">"智能辅助"</div>
+                    <A href="/agent" class="menu-item" active_class="active">
+                        <i class="el-icon-cpu"></i> "智能稽核助手"
+                    </A>
+                </div>
+                <div class="menu-group">
                     <div class="group-title">"数据中心"</div>
                     <A href="/" exact=true class="menu-item" active_class="active">
                         <i class="el-icon-pie-chart"></i> "数据统计分析"
@@ -66,11 +72,25 @@ pub fn Sidebar() -> impl IntoView {
                 </div>
 
                 <div class="menu-group">
+                    <div class="group-title">"权利保障与移送"</div>
+                    <A href="/punish-hearing" class="menu-item" active_class="active">
+                        <i class="el-icon-phone-outline"></i> "听证程序处理"
+                    </A>
+                    <A href="/punish-appeal" class="menu-item" active_class="active">
+                        <i class="el-icon-guide"></i> "复议与诉讼"
+                    </A>
+                    <A href="/punish-transfer" class="menu-item" active_class="active">
+                        <i class="el-icon-share"></i> "刑事案件移送"
+                    </A>
+                </div>
+
+                <div class="menu-group">
                     <div class="group-title">"综合管理"</div>
                     <A href="/ledger" class="menu-item" active_class="active">
                         <i class="el-icon-notebook-1"></i> "数据台账汇总"
                     </A>
                 </div>
+
             </nav>
         </aside>
     }

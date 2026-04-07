@@ -7,44 +7,103 @@ use crate::api::models::InspectionTask;
 #[component]
 pub fn PunishFilingPage() -> impl IntoView {
     let (show_modal, set_show_modal) = create_signal(false);
-    let (selected_id, set_selected_id) = create_signal(None::<i64>);
+    let (selected_id, set_selected_id) = create_signal(None::<i32>);
     let (force_measure, set_force_measure) = create_signal(false);
 
-    let cases = vec![
-        InspectionTask {
-            id: Some(1),
-            task_id: Some(9),
-            main_task_code: Some("659096748706234368".to_string()),
-            audit_no: Some("GZ20240723380".to_string()),
-            inspection_name: Some("测试国家局申报-子任务-湖南省".to_string()),
-            inspection_status: Some(1000), // FILING
-            assign_time: Some("2024-07-23".to_string()),
-            expire_time: Some("2024-07-26".to_string()),
-            ..Default::default()
-        },
-    ];
+    let task_resource = create_resource(
+        || (),
+        |_| async move {
+            let req = crate::api::models::PageVO {
+                condition: crate::api::models::InspectionTasksReq {
+                    inspection_status: Some(1000), // FILING
+                    ..Default::default()
+                },
+                page_num: 1,
+                page_size: 10,
+            };
+            crate::api::client::post::<_, crate::api::models::WrapperResponse<crate::api::models::PageResult<InspectionTask>>>("/taskpunish/page", &req)
+                .await
+                .map(|resp| resp.data.map(|d| d.data).unwrap_or_default())
+                .unwrap_or_default()
+        }
+    );
+
+
+    let handle_submit = move |_| {
+        let task_id = selected_id.get().unwrap_or(0);
+        let navigate = use_navigate();
+        
+        // Inject force measure into reqs
+        let mut reqs = vec![];
+        reqs.push(crate::api::models::InspectionTasksNoteAttrValVO {
+            id: None,
+            inspection_id: Some(task_id as i32),
+            template_id: Some(1),
+            field_name: Some("是否采取行政强制措施".to_string()),
+            field_attr: Some("compulsoryMeasure".to_string()),
+            field_value: Some(if force_measure.get() { "1".to_string() } else { "0".to_string() }),
+            field_type: Some(1),
+            field_class: None,
+            required: Some(false),
+        });
+
+        let req = crate::api::models::InspectionTasksNotePunishSubmitSubReq {
+            inspection_id: task_id as i32,
+            template_id: 1, // Filing template
+            legal_audit: 1, // Default to legal audit
+            reqs,
+        };
+
+        spawn_local(async move {
+            leptos::logging::log!("Submitting Filing Pass: {:?}", req);
+            match crate::api::client::post::<_, crate::api::models::WrapperResponse<bool>>("/taskpunish/pass", &req).await {
+                Ok(_) => {
+                    let _ = window().alert_with_message("立案审批已成功提交！");
+                    set_show_modal.set(false);
+                    navigate("/punish-investigation", Default::default());
+                }
+                Err(e) => {
+                    let _ = window().alert_with_message(&format!("提交失败: {}", e));
+                }
+            }
+        });
+    };
+
+    let handle_reject = move || {
+        let task_id = selected_id.get().unwrap_or(0);
+        let req = crate::api::models::InspectionTasksNotePunishSubmitReq {
+            inspection_id: task_id as i32,
+            template_id: 1, 
+            reqs: vec![],   
+        };
+
+        spawn_local(async move {
+            match crate::api::client::post::<_, crate::api::models::WrapperResponse<bool>>("/taskpunish/nopass", &req).await {
+                Ok(_) => {
+                    let _ = window().alert_with_message("不予立案审批已成功提交！");
+                    set_show_modal.set(false);
+                    task_resource.refetch();
+                }
+                Err(e) => {
+                    let _ = window().alert_with_message(&format!("提交失败: {}", e));
+                }
+            }
+        });
+    };
 
     let columns = vec![
-        TableColumn::new("序号".to_string(), |t: InspectionTask| t.id.unwrap_or(0).to_string()),
-        TableColumn::new("任务ID".to_string(), |t: InspectionTask| t.task_id.unwrap_or(0).to_string()),
-        TableColumn::new("主任务编码".to_string(), |t: InspectionTask| t.main_task_code.unwrap_or_default()),
-        TableColumn::new("稽查编码".to_string(), |t: InspectionTask| t.audit_no.unwrap_or_default()),
-        TableColumn::new("稽查标题".to_string(), |t: InspectionTask| t.inspection_name.unwrap_or_default()),
-        TableColumn::new("指派时间".to_string(), |t: InspectionTask| t.assign_time.unwrap_or_default()),
-        TableColumn::new("逾期时间".to_string(), |t: InspectionTask| t.expire_time.unwrap_or_default()),
+        TableColumn::new("处罚编号".to_string(), |t: InspectionTask| t.inspection_no.clone().unwrap_or_default()),
+        TableColumn::new("稽查名称".to_string(), |t: InspectionTask| t.inspection_name.clone().unwrap_or_default()),
+        TableColumn::new("案源类别".to_string(), |t: InspectionTask| t.source.clone().unwrap_or_default()),
+        TableColumn::new("涉案金额".to_string(), |_: InspectionTask| format!("{:.2}", 0.0)),
         TableColumn::new("操作".to_string(), move |t: InspectionTask| {
             let id = t.id.unwrap_or(0);
             view! {
-                <div class="table-actions">
-                    <button class="btn btn-primary btn-sm" on:click=move |_| {
-                        set_selected_id.set(Some(id as i64));
-                        set_show_modal.set(true);
-                    }>
-                        <i class="el-icon-edit"></i> " 立案调查"
-                    </button>
-                    <button class="btn btn-sm">"详情"</button>
-                </div>
-            }
+                <button class="btn-link" on:click=move |_| {
+                    set_selected_id.set(Some(id));
+                    set_show_modal.set(true);
+                }>"审批立案"</button>
+            }.into_view()
         }),
     ];
 
@@ -65,24 +124,29 @@ pub fn PunishFilingPage() -> impl IntoView {
                     </div>
                     <div class="filter-item">
                         <label>"对象名称:"</label>
-                        <input type="text" placeholder="输入单位或个人" />
+                        <input type="text" placeholder="输入单位" />
                     </div>
                     <button class="btn btn-primary">"查询"</button>
                 </div>
 
                 <div class="data-table-wrapper">
-                    <DataTable data=cases columns=columns />
+                    {move || match task_resource.get() {
+                        Some(data) => view! { 
+                            <DataTable data=data columns=columns.clone() /> 
+                        }.into_view(),
+                        None => view! { <div class="loading">"加载中..."</div> }.into_view()
+                    }}
                 </div>
             </div>
 
             <Modal 
                 show=show_modal 
                 on_close=Callback::new(move |_| set_show_modal.set(false)) 
-                title="立案调查".to_string()
+                title="立案调查审批".to_string()
                 footer=view! {
                     <button class="btn" on:click=move |_| set_show_modal.set(false)>"取消"</button>
-                    <A href=format!("/document-edit/{}", selected_id.get().unwrap_or(0)) class="btn btn-primary">"填写文书"</A>
-                    <button class="btn btn-primary" on:click=move |_| set_show_modal.set(false)>"保存"</button>
+                    <button class="btn btn-danger" on:click=move |_| handle_reject()>"不予立案"</button>
+                    <button class="btn btn-primary" on:click=handle_submit>"确认立案"</button>
                 }.into_view()
             >
                 <div class="punish-filing-form">
@@ -100,10 +164,6 @@ pub fn PunishFilingPage() -> impl IntoView {
                                 "是"
                             </label>
                         </div>
-                    </div>
-                    <div style="margin-top: 20px; padding: 12px; background: #fff7e6; border: 1px solid #ffd591; border-radius: 4px; color: #fa8c16; font-size: 13px;">
-                        <i class="el-icon-warning"></i>
-                        " 说明：开启强制措施后，在调查阶段将激活【强制执行】文书填报环节。"
                     </div>
                 </div>
             </Modal>

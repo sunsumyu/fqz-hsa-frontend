@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use leptos::*;
 
 #[component]
@@ -24,7 +25,7 @@ where
                         view! {
                             <tr>
                                 {columns.iter().map(|col| {
-                                    let render = &col.render;
+                                    let render = col.render.clone();
                                     view! { 
                                         <td>{render(item_clone.clone())}</td>
                                     }
@@ -38,9 +39,10 @@ where
     }
 }
 
+#[derive(Clone)]
 pub struct TableColumn<T> {
     pub title: String,
-    pub render: Box<dyn Fn(T) -> View>,
+    pub render: Rc<dyn Fn(T) -> View>,
 }
 
 impl<T> TableColumn<T> {
@@ -51,7 +53,7 @@ impl<T> TableColumn<T> {
     {
         Self {
             title,
-            render: Box::new(move |item| render(item).into_view()),
+            render: Rc::new(move |item| render(item).into_view()),
         }
     }
 }

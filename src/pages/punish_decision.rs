@@ -3,7 +3,7 @@ use leptos_router::use_navigate;
 use crate::components::data_table::{DataTable, TableColumn};
 use crate::components::modal::Modal;
 use crate::components::template_editor::TemplateEditor;
-use crate::api::models::{InspectionTask, InspectionTasksNoteAttrValVO, TaskPunishDecisionReq};
+use crate::api::models::{InspectionTask, InspectionTasksNoteAttrValVO, InsRecheckReq, WrapperResponse};
 use crate::api::constants::PunishStatus;
 
 #[component]
@@ -13,17 +13,26 @@ pub fn PunishDecisionPage() -> impl IntoView {
     let (selected_task, set_selected_task) = create_signal(None::<InspectionTask>);
     
     let (reqs_data, set_reqs_data) = create_signal(Vec::<InspectionTasksNoteAttrValVO>::new());
+    
+    let task_resource = create_resource(
+        || (),
+        |_| async move {
+            let req = crate::api::models::PageVO {
+                condition: crate::api::models::InspectionTasksReq {
+                    inspection_status: Some(PunishStatus::Decision as i32),
+                    ..Default::default()
+                },
+                page_num: 1,
+                page_size: 10,
+            };
+            crate::api::client::post::<_, WrapperResponse<crate::api::models::PageResult<InspectionTask>>>("/taskpunish/page", &req)
+                .await
+                .map(|resp| resp.data.map(|d| d.data).unwrap_or_default())
+                .unwrap_or_default()
+        }
+    );
 
-    let cases = vec![
-        InspectionTask {
-            id: Some(255),
-            audit_no: Some("P-202404-025".to_string()),
-            inspection_name: Some("行政处罚决定下达 - 广州市第一人民医院".to_string()),
-            inspection_status: Some(PunishStatus::Decision as i32),
-            assign_time: Some("2024-04-20".to_string()),
-            ..Default::default()
-        },
-    ];
+    let cases = move || task_resource.get().unwrap_or_default();
 
     let columns = vec![
         TableColumn::new("处罚编号".to_string(), |t: InspectionTask| t.audit_no.unwrap_or_default()),
@@ -47,15 +56,28 @@ pub fn PunishDecisionPage() -> impl IntoView {
 
     let handle_submit = move |_| {
         let task_id = selected_task.get().and_then(|t| t.id).unwrap_or(0);
-        let req = TaskPunishDecisionReq {
+        let req = InsRecheckReq {
             inspection_id: task_id as i32,
+            template_id: 4, // Assume template_id 4 for decision
+            recheck: 0, 
+            transfer: 0,
             reqs: reqs_data.get(),
         };
-        leptos::logging::log!("Submitting TaskPunishDecisionReq: {:?}", req);
-        let _ = window().alert_with_message("处罚决定书已正式确认并进入送达环节！");
-        set_show_decision_modal.set(false);
-        let navigate = use_navigate();
-        navigate("/ledger", Default::default());
+
+        spawn_local(async move {
+            leptos::logging::log!("Submitting InsRecheckReq: {:?}", req);
+            match crate::api::client::post::<_, WrapperResponse<bool>>("/taskpunish/punish", &req).await {
+                Ok(_) => {
+                    let _ = window().alert_with_message("处罚决定已提交完成！");
+                    set_show_decision_modal.set(false);
+                    let navigate = use_navigate();
+                    navigate("/punish-execution", Default::default());
+                }
+                Err(e) => {
+                    let _ = window().alert_with_message(&format!("提交失败: {}", e));
+                }
+            }
+        });
     };
 
     view! {
@@ -69,7 +91,7 @@ pub fn PunishDecisionPage() -> impl IntoView {
 
             <div class="view-container">
                 <div class="data-table-wrapper">
-                    <DataTable data=cases columns=columns />
+                    <DataTable data=cases() columns=columns />
                 </div>
             </div>
 

@@ -2,7 +2,7 @@ use leptos::*;
 use leptos_router::*;
 use crate::components::data_table::{DataTable, TableColumn};
 use crate::components::modal::Modal;
-use crate::api::models::InspectionTask;
+use crate::api::models::{InspectionTask, PageVO, InspectionTasksReq, WrapperResponse, PageResult, InspPrecheckReq};
 use crate::api::constants::PunishStatus;
 
 #[component]
@@ -11,33 +11,64 @@ pub fn ClueAuditPage() -> impl IntoView {
     let (selected_id, set_selected_id) = create_signal(None::<i64>);
     
     // Popup form state
-    let (_is_merge, set_is_merge) = create_signal("no".to_string());
-    let (case_search, _set_case_search) = create_signal("".to_string());
-    let (_event_id, set_event_id) = create_signal("".to_string());
-    let (_audit_opinion, set_audit_opinion) = create_signal("".to_string());
+    let (case_repeat_flag, set_case_repeat_flag) = create_signal(0);
+    let (checked_reason, set_checked_reason) = create_signal(String::new());
+    let (punish_method, set_punish_method) = create_signal(2); // 2: 立案调查
 
-    let cases = vec![
-        InspectionTask {
-            id: Some(1),
-            task_id: Some(6),
-            main_task_code: Some("659096748706234368".to_string()),
-            audit_no: Some("GZ20240722255".to_string()),
-            inspection_name: Some("二九一医院(稽核)".to_string()),
-            inspection_status: Some(PunishStatus::WaitPreAudit as i32),
-            assign_time: Some("2024-07-22".to_string()),
-            expire_time: Some("2024-07-26".to_string()),
-            ..Default::default()
-        },
-    ];
+    let task_resource = create_resource(
+        || (),
+        |_| async move {
+            let req = PageVO {
+                condition: InspectionTasksReq {
+                    inspection_status: Some(PunishStatus::WaitPreAudit as i32),
+                    ..Default::default()
+                },
+                page_num: 1,
+                page_size: 10,
+            };
+            crate::api::client::post::<_, WrapperResponse<PageResult<InspectionTask>>>("/insp/tasks/page", &req)
+                .await
+                .map(|resp| resp.data.map(|d| d.data).unwrap_or_default())
+                .unwrap_or_default()
+        }
+    );
+
+    let handle_precheck_save = move |_| {
+        let id = selected_id.get().unwrap_or(0) as i32;
+        if id == 0 { return; }
+        
+        let req = InspPrecheckReq {
+            inspection_id: Some(id),
+            case_repeat_flag: Some(case_repeat_flag.get()),
+            case_repeat_id: None,
+            event: Some("1".to_string()),
+            checked_reason: Some(checked_reason.get()),
+            punish_method: Some(punish_method.get()),
+            result: None,
+            punish_submit: None,
+        };
+
+        spawn_local(async move {
+            match crate::api::client::post::<_, WrapperResponse<bool>>("/insp/tasks/precheck", &req).await {
+                Ok(_) => {
+                    let _ = window().alert_with_message("提交成功！");
+                    set_show_filing_modal.set(false);
+                    task_resource.refetch();
+                }
+                Err(e) => {
+                    let _ = window().alert_with_message(&format!("操作失败: {}", e));
+                }
+            }
+        });
+    };
 
     let columns = vec![
         TableColumn::new("序号".to_string(), |t: InspectionTask| t.id.unwrap_or(0).to_string()),
         TableColumn::new("任务ID".to_string(), |t: InspectionTask| t.task_id.unwrap_or(0).to_string()),
-        TableColumn::new("主任务编码".to_string(), |t: InspectionTask| t.main_task_code.unwrap_or_default()),
-        TableColumn::new("稽查编码".to_string(), |t: InspectionTask| t.audit_no.unwrap_or_default()),
-        TableColumn::new("稽查标题".to_string(), |t: InspectionTask| t.inspection_name.unwrap_or_default()),
-        TableColumn::new("指派时间".to_string(), |t: InspectionTask| t.assign_time.unwrap_or_default()),
-        TableColumn::new("逾期时间".to_string(), |t: InspectionTask| t.expire_time.unwrap_or_default()),
+        TableColumn::new("稽查编码".to_string(), |t: InspectionTask| t.inspection_no.clone().unwrap_or_default()),
+        TableColumn::new("稽查标题".to_string(), |t: InspectionTask| t.inspection_name.clone().unwrap_or_default()),
+        TableColumn::new("被稽查点".to_string(), |t: InspectionTask| t.inspection_name.clone().unwrap_or_else(|| "刀疤刘".to_string())),
+        TableColumn::new("指派时间".to_string(), |t: InspectionTask| t.assign_time.clone().unwrap_or_default()),
         TableColumn::new("操作".to_string(), move |t: InspectionTask| {
             let id = t.id.unwrap_or(0);
             view! {
@@ -56,81 +87,81 @@ pub fn ClueAuditPage() -> impl IntoView {
 
     let modal_footer = move || view! {
         <button class="btn" on:click=move |_| set_show_filing_modal.set(false)>"取消"</button>
-        <A href=format!("/document-edit/{}", selected_id.get().unwrap_or(0)) class="btn">"填写文书"</A>
-        <button class="btn btn-primary" on:click=move |_| set_show_filing_modal.set(false)>"保存"</button>
+        <button 
+            class="btn" 
+            on:click=move |_| {
+                if let Some(id) = selected_id.get() {
+                    let navigate = use_navigate();
+                    navigate(&format!("/document-edit/{}", id), Default::default());
+                } else {
+                    let _ = window().alert_with_message("请先选择一条任务。");
+                }
+            }
+        >
+            "填写文书"
+        </button>
+        <button class="btn btn-primary" on:click=handle_precheck_save>"保存"</button>
     }.into_view();
 
     view! {
         <div class="page-container">
             <header class="page-header">
-                <div class="breadcrumb">
-                    <span>"Dashboard"</span> " / " <span>"任务稽查"</span> " / " <span class="active">"预检中"</span>
-                </div>
-                <h2>"任务预检 / 稽核处理"</h2>
+                <h2>"线索分配与稽查"</h2>
             </header>
 
             <div class="view-container">
                 <div class="filter-bar">
                     <div class="filter-item">
-                        <label>"请输入稽查编码:"</label>
-                        <input type="text" placeholder="稽查编码" />
+                        <label>"稽查对象"</label>
+                        <input type="text" placeholder="输入名称/编码..." />
                     </div>
                     <div class="filter-item">
-                        <label>"请输入稽查标题:"</label>
-                        <input type="text" placeholder="稽查标题" />
+                        <label>"任务状态"</label>
+                        <select>
+                            <option value="130">"待预检"</option>
+                            <option value="110">"稽查中"</option>
+                        </select>
                     </div>
-                    <button class="btn btn-primary">"查询"</button>
+                    <button class="btn btn-primary" on:click=move |_| task_resource.refetch()>"查询"</button>
                     <button class="btn">"重置"</button>
                 </div>
 
                 <div class="data-table-wrapper">
-                    <DataTable data=cases columns=columns />
+                    {move || match task_resource.get() {
+                        Some(data) => view! { 
+                            <DataTable data=data columns=columns.clone() /> 
+                        }.into_view(),
+                        None => view! { <div class="loading">"加载中..."</div> }.into_view()
+                    }}
                 </div>
             </div>
 
             <Modal 
                 show=show_filing_modal 
-                on_close=Callback::new(move |_| set_show_filing_modal.set(false)) 
-                title="立案调查".to_string()
+                title="立案调查预检结论".to_string() 
+                on_close=Callback::new(move |_| set_show_filing_modal.set(false))
                 footer=modal_footer()
             >
-                <div class="filing-popup-form" style="padding: 10px;">
-                    <div style="display: flex; gap: 20px; margin-bottom: 15px;">
-                        <div style="flex: 1;">
-                            <label style="display: block; margin-bottom: 5px;">"是否串并案"</label>
-                            <select 
-                                style="width: 100%; padding: 8px; border: 1px solid #dcdfe6; border-radius: 4px;"
-                                on:change=move |e| set_is_merge.set(event_target_value(&e))
-                            >
-                                <option value="no">"否"</option>
-                                <option value="yes">"是"</option>
-                            </select>
-                        </div>
-                        <div style="flex: 1;">
-                            <label style="display: block; margin-bottom: 5px;">"案件"</label>
-                            <div style="display: flex;">
-                                <input 
-                                    type="text" 
-                                    placeholder="请选择或搜索案件" 
-                                    style="flex: 1; padding: 8px; border: 1px solid #dcdfe6; border-radius: 4px 0 0 4px;"
-                                    prop:value=case_search
-                                />
-                                <button style="padding: 0 12px; background: #f5f7fa; border: 1px solid #dcdfe6; border-left: none; border-radius: 0 4px 4px 0;">
-                                    <i class="el-icon-search"></i>
-                                </button>
-                            </div>
-                        </div>
+                <div class="form-container" style="padding: 20px;">
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px;">"是否串并案"</label>
+                        <select 
+                            style="width: 100%; padding: 8px; border: 1px solid #dcdfe6; border-radius: 4px;"
+                            on:change=move |e| set_case_repeat_flag.set(event_target_value(&e).parse().unwrap_or(0))
+                        >
+                            <option value="0">"否"</option>
+                            <option value="1">"是"</option>
+                        </select>
                     </div>
 
                     <div style="margin-bottom: 15px;">
-                        <label style="display: block; margin-bottom: 5px;">"事件"</label>
+                        <label style="display: block; margin-bottom: 5px;">"处理方式"</label>
                         <select 
                             style="width: 100%; padding: 8px; border: 1px solid #dcdfe6; border-radius: 4px;"
-                            on:change=move |e| set_event_id.set(event_target_value(&e))
+                            on:change=move |e| set_punish_method.set(event_target_value(&e).parse().unwrap_or(2))
                         >
-                            <option value="">"请选择事件"</option>
-                            <option value="1">"违规结算事件 A"</option>
-                            <option value="2">"串换项目事件 B"</option>
+                            <option value="2">"立案调查"</option>
+                            <option value="1">"协议处罚"</option>
                         </select>
                     </div>
 
@@ -139,7 +170,7 @@ pub fn ClueAuditPage() -> impl IntoView {
                         <textarea 
                             style="width: 100%; height: 80px; padding: 8px; border: 1px solid #dcdfe6; border-radius: 4px; resize: none;"
                             placeholder="请输入审核意见"
-                            on:input=move |e| set_audit_opinion.set(event_target_value(&e))
+                            on:input=move |e| set_checked_reason.set(event_target_value(&e))
                         ></textarea>
                     </div>
                 </div>

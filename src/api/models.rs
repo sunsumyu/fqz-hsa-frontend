@@ -14,7 +14,8 @@ pub struct PageVO<T> {
     pub page_size: i32,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct PageResult<T> {
     pub data: Vec<T>,
     pub record_counts: i32,
@@ -53,7 +54,7 @@ pub struct ViewInspTaskDTO {
     pub status_desc: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct InspectionTasksReq {
     pub inspection_no: Option<String>,
@@ -106,11 +107,12 @@ pub struct InspectionTasksNoteAttrValVO {
     pub id: Option<i32>,
     pub inspection_id: Option<i32>,
     pub template_id: Option<i32>,
-    pub attr_id: Option<i32>,
     pub field_type: Option<i32>,
     pub field_name: Option<String>,
     pub field_attr: Option<String>,
+    pub field_class: Option<String>,
     pub field_value: Option<String>,
+    pub required: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -126,61 +128,45 @@ pub struct InspectionTasksNoteAttrListVO {
 pub struct InspectionTasksNotePunishSubmitReq {
     pub inspection_id: i32,
     pub template_id: i32,
-    pub attr_vals: Vec<InspectionTasksNoteAttrValVO>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskPunishInquireReq {
-    pub inspection_id: i32,
-    pub compulsory_measure: Option<i32>, // 是否采取行政强制措施
-    pub reqs: Vec<InspectionTasksNoteAttrValVO>, // 文书属性数据
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskPunishFilingReq {
-    pub inspection_id: i32,
-    pub filing_status: i32, // 1: 立案, 2: 不予立案
     pub reqs: Vec<InspectionTasksNoteAttrValVO>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-pub struct TaskPunishLegalReviewReq {
+pub struct InspectionTasksNotePunishSubmitSubReq {
     pub inspection_id: i32,
-    pub audit_conclusion: i32, // 1: 通过, 2: 退回, 3: 不予处罚
+    pub template_id: i32,
+    pub reqs: Vec<InspectionTasksNoteAttrValVO>,
+    pub legal_audit: i32, // 是否法制审核
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct InsInquiredReq {
+    pub inspection_id: i32,
+    pub template_id: i32,
+    pub reqs: Vec<InspectionTasksNoteAttrValVO>,
+    pub compulsory_measure: i32, // 是否采取行政强制措施
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct InsAppealReq {
+    pub inspection_id: i32,
+    pub template_id: i32,
+    pub reqs: Vec<InspectionTasksNoteAttrValVO>,
+    pub audit_conclusion: i32, 
     pub audit_opinion: String,
-    pub reqs: Vec<InspectionTasksNoteAttrValVO>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-pub struct TaskPunishNoticeReq {
+pub struct InsRecheckReq {
     pub inspection_id: i32,
+    pub template_id: i32,
     pub reqs: Vec<InspectionTasksNoteAttrValVO>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskPunishDecisionReq {
-    pub inspection_id: i32,
-    pub reqs: Vec<InspectionTasksNoteAttrValVO>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskPunishExecutionReq {
-    pub inspection_id: i32,
-    pub execution_status: i32, // 1: 已执行, 2: 强制执行中
-    pub reqs: Vec<InspectionTasksNoteAttrValVO>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskPunishCloseReq {
-    pub inspection_id: i32,
-    pub close_remark: String,
+    pub recheck: i32,  // 是否复议: 1 是 0 否
+    pub transfer: i32, // 是否移交: 1 是 0 否
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -206,4 +192,75 @@ pub struct TypicalCaseVO {
     pub result: String,         // 查处结果
     pub lessons: String,        // 案例启示
     pub image_url: Option<String>,
+}
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyValVO {
+    pub key: String,
+    pub val: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct InsResultUploadReq {
+    pub inspection_id: i32,
+    pub template_id: i32,
+    pub reqs: Vec<InspectionTasksNoteAttrValVO>,
+    pub legal_audit: i32,
+    pub transfor: i32, // Note: Typo 'transfor' matches Java DTO
+    pub notice: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct InspectionTasksNoteAttrValReq { // For batch add
+    pub id: Option<i32>,
+    pub inspection_id: i32,
+    pub template_id: i32,
+    pub field_name: String,
+    pub field_attr: String,
+    pub field_class: Option<String>,
+    pub field_value: String,
+    pub field_type: i32,
+    pub required: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchAddReq {
+    pub inspection_id: i32,
+    pub list: Vec<InspectionTasksNoteAttrValReq>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct InspPrecheckReq {
+    pub inspection_id: Option<i32>,
+    pub case_repeat_flag: Option<i32>,
+    pub case_repeat_id: Option<i32>,
+    pub event: Option<String>,
+    pub checked_reason: Option<String>,
+    pub punish_method: Option<i32>,
+    pub result: Option<InspectionTasksResultReq>,
+    pub punish_submit: Option<InspectionTasksNotePunishSubmitReq>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletionReq {
+    pub inspection_id: Option<i32>,
+    pub opinion: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct InspectionTasksResultReq {
+    pub id: Option<i32>,
+    pub inspection_id: Option<i32>,
+    pub fixmedins_code: String,
+    pub fixmedins_name: String,
+    pub violation_found: Option<i32>,
+    pub basis_for_penalty: Option<String>,
+    pub penalty_recommendation: Option<String>,
+    pub investigating_personnel: Option<String>,
 }

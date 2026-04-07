@@ -3,7 +3,7 @@ use leptos_router::use_navigate;
 use crate::components::data_table::{DataTable, TableColumn};
 use crate::components::modal::Modal;
 use crate::components::template_editor::TemplateEditor;
-use crate::api::models::{InspectionTask, InspectionTasksNoteAttrValVO, TaskPunishExecutionReq};
+use crate::api::models::{InspectionTask, InspectionTasksNoteAttrValVO, InspectionTasksNotePunishSubmitReq, WrapperResponse};
 use crate::api::constants::PunishStatus;
 
 #[component]
@@ -14,17 +14,26 @@ pub fn PunishExecutionPage() -> impl IntoView {
     
     let (execution_status, set_execution_status) = create_signal(1); // 1: 已执行, 2: 强制执行中
     let (reqs_data, set_reqs_data) = create_signal(Vec::<InspectionTasksNoteAttrValVO>::new());
+    
+    let task_resource = create_resource(
+        || (),
+        |_| async move {
+            let req = crate::api::models::PageVO {
+                condition: crate::api::models::InspectionTasksReq {
+                    inspection_status: Some(PunishStatus::Execution as i32),
+                    ..Default::default()
+                },
+                page_num: 1,
+                page_size: 10,
+            };
+            crate::api::client::post::<_, WrapperResponse<crate::api::models::PageResult<InspectionTask>>>("/taskpunish/page", &req)
+                .await
+                .map(|resp| resp.data.map(|d| d.data).unwrap_or_default())
+                .unwrap_or_default()
+        }
+    );
 
-    let cases = vec![
-        InspectionTask {
-            id: Some(255),
-            audit_no: Some("P-202404-030".to_string()),
-            inspection_name: Some("行政处罚执行确认 - 马某某".to_string()),
-            inspection_status: Some(PunishStatus::Execution as i32),
-            assign_time: Some("2024-04-25".to_string()),
-            ..Default::default()
-        },
-    ];
+    let cases = move || task_resource.get().unwrap_or_default();
 
     let columns = vec![
         TableColumn::new("处罚编号".to_string(), |t: InspectionTask| t.audit_no.unwrap_or_default()),
@@ -48,16 +57,40 @@ pub fn PunishExecutionPage() -> impl IntoView {
 
     let handle_submit = move |_| {
         let task_id = selected_task.get().and_then(|t| t.id).unwrap_or(0);
-        let req = TaskPunishExecutionReq {
+        
+        let mut reqs = reqs_data.get();
+        // Inject execution status
+        reqs.push(InspectionTasksNoteAttrValVO {
+            id: None,
+            inspection_id: Some(task_id as i32),
+            template_id: Some(5),
+            field_name: Some("执行结果".to_string()),
+            field_attr: Some("executionStatus".to_string()),
+            field_value: Some(execution_status.get().to_string()),
+            field_type: Some(1),
+            field_class: None,
+            required: Some(false),
+        });
+        
+        let req = InspectionTasksNotePunishSubmitReq {
             inspection_id: task_id as i32,
-            execution_status: execution_status.get(),
-            reqs: reqs_data.get(),
+            template_id: 5, // Assume template_id 5 for execution
+            reqs,
         };
-        leptos::logging::log!("Submitting TaskPunishExecutionReq: {:?}", req);
-        let _ = window().alert_with_message("处罚执行状态已成功记录！");
-        set_show_exec_modal.set(false);
-        let navigate = use_navigate();
-        navigate("/ledger", Default::default());
+
+        spawn_local(async move {
+            leptos::logging::log!("Submitting InspectionTasksNotePunishSubmitReq: {:?}", req);
+            match crate::api::client::post::<_, WrapperResponse<bool>>("/taskpunish/exec", &req).await {
+                Ok(_) => {
+                    let _ = window().alert_with_message("执行确认已提交完成！");
+                    set_show_exec_modal.set(false);
+                    task_resource.refetch();
+                }
+                Err(e) => {
+                    let _ = window().alert_with_message(&format!("提交失败: {}", e));
+                }
+            }
+        });
     };
 
     view! {
@@ -71,7 +104,7 @@ pub fn PunishExecutionPage() -> impl IntoView {
 
             <div class="view-container">
                 <div class="data-table-wrapper">
-                    <DataTable data=cases columns=columns />
+                    <DataTable data=cases() columns=columns />
                 </div>
             </div>
 

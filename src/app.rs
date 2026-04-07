@@ -12,11 +12,18 @@ use crate::pages::punish_legal::PunishLegalPage;
 use crate::pages::punish_notice::PunishNoticePage;
 use crate::pages::ledger::LedgerPage;
 use crate::pages::case_library::CaseLibraryPage;
+use crate::pages::punish_hearing::PunishHearingPage;
+use crate::pages::punish_appeal::PunishAppealPage;
+use crate::pages::punish_transfer::PunishTransferPage;
+use crate::pages::agent::AgentPage;
 use crate::components::sidebar::Sidebar;
 use crate::components::template_editor::TemplateEditor;
 
 #[component]
 pub fn App() -> impl IntoView {
+    let (disable_security_mask, set_disable_security_mask) = create_signal(false);
+    provide_context((disable_security_mask, set_disable_security_mask));
+
     view! {
         <Router>
             <div class="app-layout">
@@ -35,6 +42,10 @@ pub fn App() -> impl IntoView {
                         <Route path="/punish-execution" view=PunishExecutionPage/>
                         <Route path="/ledger" view=LedgerPage/>
                         <Route path="/case-library" view=CaseLibraryPage/>
+                        <Route path="/punish-hearing" view=PunishHearingPage/>
+                        <Route path="/punish-appeal" view=PunishAppealPage/>
+                        <Route path="/punish-transfer" view=PunishTransferPage/>
+                        <Route path="/agent" view=AgentPage/>
                         <Route path="/document-edit/:id" view=AuditPage/>
                         <Route path="/*any" view=NotFound/>
                     </Routes>

@@ -1,8 +1,7 @@
 use leptos::*;
-use leptos_router::use_navigate;
 use crate::components::data_table::{DataTable, TableColumn};
 use crate::components::modal::Modal;
-use crate::api::models::{InspectionTask, TaskPunishCloseReq};
+use crate::api::models::{InspectionTask, InspectionTasksNotePunishSubmitReq, WrapperResponse};
 use crate::api::constants::PunishStatus;
 
 #[component]
@@ -11,47 +10,86 @@ pub fn ConfirmFinishPage() -> impl IntoView {
     let (selected_task, set_selected_task) = create_signal(None::<InspectionTask>);
     let (close_remark, set_close_remark) = create_signal(String::new());
 
-    let tasks = vec![
-        InspectionTask {
-            id: Some(255),
-            audit_no: Some("GZ20240722255".to_string()),
-            inspection_name: Some("XX市第一人民医院行政处罚案".to_string()),
-            inspection_status: Some(PunishStatus::Closed as i32),
-            assign_time: Some("2024-07-22".to_string()),
-            ..Default::default()
-        },
-    ];
+    let task_resource = create_resource(
+        || (),
+        |_| async move {
+            let req = crate::api::models::PageVO {
+                condition: crate::api::models::InspectionTasksReq {
+                    inspection_status: Some(PunishStatus::WaitClose as i32), // 假设 1700
+                    ..Default::default()
+                },
+                page_num: 1,
+                page_size: 10,
+            };
+            crate::api::client::post::<_, WrapperResponse<crate::api::models::PageResult<InspectionTask>>>("/taskpunish/page", &req)
+                .await
+                .map(|resp| resp.data.map(|d| d.data).unwrap_or_default())
+                .unwrap_or_default()
+        }
+    );
+
+    let cases = move || task_resource.get().unwrap_or_default();
 
     let columns = vec![
-        TableColumn::new("稽查编码".to_string(), |t: InspectionTask| t.audit_no.unwrap_or_default()),
-        TableColumn::new("任务名称".to_string(), |t: InspectionTask| t.inspection_name.unwrap_or_default()),
+        TableColumn::new("稽查编码".to_string(), |t: InspectionTask| t.inspection_no.clone().unwrap_or_default()),
+        TableColumn::new("任务名称".to_string(), |t: InspectionTask| t.inspection_name.clone().unwrap_or_default()),
         TableColumn::new("操作".to_string(), move |t: InspectionTask| {
             let task = t.clone();
             view! {
                 <div class="table-actions">
-                    <button class="btn btn-primary btn-sm" on:click=move |_| {
+                    <button class="btn-link" on:click=move |_| {
                         set_selected_task.set(Some(task.clone()));
                         set_show_close_modal.set(true);
                     }>
                         "结案确认"
                     </button>
-                    <button class="btn btn-sm">"详情"</button>
                 </div>
-            }
+            }.into_view()
         }),
     ];
 
-    let handle_close_confirm = move |_| {
+    let handle_feedback = move || {
         let task_id = selected_task.get().and_then(|t| t.id).unwrap_or(0);
-        let req = TaskPunishCloseReq {
+        let req = InspectionTasksNotePunishSubmitReq {
             inspection_id: task_id as i32,
-            close_remark: close_remark.get(),
+            template_id: 6,
+            reqs: vec![],
         };
-        leptos::logging::log!("Submitting TaskPunishCloseReq: {:?}", req);
-        let _ = window().alert_with_message("案件已正式办结并归档！");
-        set_show_close_modal.set(false);
-        let navigate = use_navigate();
-        navigate("/ledger", Default::default());
+
+        spawn_local(async move {
+            match crate::api::client::post::<_, WrapperResponse<bool>>("/taskpunish/case/feedback", &req).await {
+                Ok(_) => {
+                    let _ = window().alert_with_message("结案反馈已提交！");
+                    set_show_close_modal.set(false);
+                    task_resource.refetch();
+                }
+                Err(e) => {
+                    let _ = window().alert_with_message(&format!("提交失败: {}", e));
+                }
+            }
+        });
+    };
+
+    let handle_endcase = move || {
+        let task_id = selected_task.get().and_then(|t| t.id).unwrap_or(0);
+        let req = InspectionTasksNotePunishSubmitReq {
+            inspection_id: task_id as i32,
+            template_id: 6,
+            reqs: vec![],
+        };
+
+        spawn_local(async move {
+            match crate::api::client::post::<_, WrapperResponse<bool>>("/taskpunish/endcase", &req).await {
+                Ok(_) => {
+                    let _ = window().alert_with_message("案件已正式终结！");
+                    set_show_close_modal.set(false);
+                    task_resource.refetch();
+                }
+                Err(e) => {
+                    let _ = window().alert_with_message(&format!("结案失败: {}", e));
+                }
+            }
+        });
     };
 
     view! {
@@ -65,7 +103,7 @@ pub fn ConfirmFinishPage() -> impl IntoView {
 
             <div class="view-container">
                 <div class="data-table-wrapper">
-                    <DataTable data=tasks columns=columns />
+                    <DataTable data=cases() columns=columns />
                 </div>
             </div>
 
@@ -75,7 +113,8 @@ pub fn ConfirmFinishPage() -> impl IntoView {
                 title="结案归档确认".to_string()
                 footer=view! {
                     <button class="btn" on:click=move |_| set_show_close_modal.set(false)>"取消"</button>
-                    <button class="btn btn-primary" on:click=handle_close_confirm>"确认结案"</button>
+                    <button class="btn btn-warning" on:click=move |_| handle_endcase()>"正式结案"</button>
+                    <button class="btn btn-primary" on:click=move |_| handle_feedback()>"确认反馈"</button>
                 }.into_view()
             >
                 <div class="close-confirm-form h-fidelity-form">
@@ -90,6 +129,7 @@ pub fn ConfirmFinishPage() -> impl IntoView {
                             style="height: 100px;" 
                             placeholder="输入办结意见或归档说明..."
                             on:input=move |e| set_close_remark.set(event_target_value(&e))
+                            prop:value=close_remark
                         ></textarea>
                     </div>
                 </div>

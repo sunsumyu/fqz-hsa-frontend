@@ -3,7 +3,7 @@ use leptos_router::use_navigate;
 use crate::components::data_table::{DataTable, TableColumn};
 use crate::components::modal::Modal;
 use crate::components::template_editor::TemplateEditor;
-use crate::api::models::{InspectionTask, InspectionTasksNoteAttrValVO, TaskPunishLegalReviewReq};
+use crate::api::models::{InspectionTask, InspectionTasksNoteAttrValVO, InspectionTasksNotePunishSubmitReq, WrapperResponse};
 use crate::api::constants::PunishStatus;
 
 #[component]
@@ -16,17 +16,26 @@ pub fn PunishLegalPage() -> impl IntoView {
     let (audit_conclusion, set_audit_conclusion) = create_signal(1); // 1: 通过, 2: 退回, 3: 不予处罚
     let (audit_opinion, set_audit_opinion) = create_signal(String::new());
     let (reqs_data, set_reqs_data) = create_signal(Vec::<InspectionTasksNoteAttrValVO>::new());
+    
+    let task_resource = create_resource(
+        || (),
+        |_| async move {
+            let req = crate::api::models::PageVO {
+                condition: crate::api::models::InspectionTasksReq {
+                    inspection_status: Some(PunishStatus::LegalReview as i32),
+                    ..Default::default()
+                },
+                page_num: 1,
+                page_size: 10,
+            };
+            crate::api::client::post::<_, WrapperResponse<crate::api::models::PageResult<InspectionTask>>>("/taskpunish/page", &req)
+                .await
+                .map(|resp| resp.data.map(|d| d.data).unwrap_or_default())
+                .unwrap_or_default()
+        }
+    );
 
-    let cases = vec![
-        InspectionTask {
-            id: Some(255),
-            audit_no: Some("GZ20240722255".to_string()),
-            inspection_name: Some("行政处罚案件法制审核 - 湖南省人民医院".to_string()),
-            inspection_status: Some(PunishStatus::LegalReview as i32),
-            assign_time: Some("2024-07-22".to_string()),
-            ..Default::default()
-        },
-    ];
+    let cases = move || task_resource.get().unwrap_or_default();
 
     let columns = vec![
         TableColumn::new("稽查编码".to_string(), |t: InspectionTask| t.audit_no.unwrap_or_default()),
@@ -50,17 +59,56 @@ pub fn PunishLegalPage() -> impl IntoView {
 
     let handle_submit = move |_| {
         let task_id = selected_task.get().and_then(|t| t.id).unwrap_or(0);
-        let req = TaskPunishLegalReviewReq {
+        
+        // Inject standalone UI fields into reqs
+        let mut reqs = reqs_data.get();
+        reqs.push(InspectionTasksNoteAttrValVO {
+            id: None,
+            inspection_id: Some(task_id as i32),
+            template_id: Some(2),
+            field_name: Some("审核结论".to_string()),
+            field_attr: Some("audit_conclusion".to_string()),
+            field_value: Some(audit_conclusion.get().to_string()),
+            field_type: Some(1),
+            field_class: None,
+            required: Some(false),
+        });
+        reqs.push(InspectionTasksNoteAttrValVO {
+            id: None,
+            inspection_id: Some(task_id as i32),
+            template_id: Some(2),
+            field_name: Some("审核意见".to_string()),
+            field_attr: Some("audit_opinion".to_string()),
+            field_value: Some(audit_opinion.get()),
+            field_type: Some(1),
+            field_class: None,
+            required: Some(false),
+        });
+
+        let req = crate::api::models::InspectionTasksNotePunishSubmitReq {
             inspection_id: task_id as i32,
-            audit_conclusion: audit_conclusion.get(),
-            audit_opinion: audit_opinion.get(),
-            reqs: reqs_data.get(),
+            template_id: 2, 
+            reqs,
         };
-        leptos::logging::log!("Submitting TaskPunishLegalReviewReq: {:?}", req);
-        let _ = window().alert_with_message("法制审核结果已成功提交！");
-        set_show_audit_modal.set(false);
-        let navigate = use_navigate();
-        navigate("/ledger", Default::default());
+
+        spawn_local(async move {
+            leptos::logging::log!("Submitting Legal Review: {:?}", req);
+            match crate::api::client::post::<_, WrapperResponse<bool>>("/taskpunish/legal/review", &req).await {
+                Ok(_) => {
+                    let _ = window().alert_with_message("法制审核已提交成功！");
+                    set_show_audit_modal.set(false);
+                    let navigate = use_navigate();
+                    if audit_conclusion.get() == 1 {
+                        navigate("/punish-notice", Default::default());
+                    } else {
+                        task_resource.refetch();
+                    }
+                }
+                Err(e) => {
+                    let _ = window().alert_with_message(&format!("提交失败: {}", e));
+                }
+            }
+        });
     };
 
     view! {
@@ -74,7 +122,7 @@ pub fn PunishLegalPage() -> impl IntoView {
 
             <div class="view-container">
                 <div class="data-table-wrapper">
-                    <DataTable data=cases columns=columns />
+                    <DataTable data=cases() columns=columns />
                 </div>
             </div>
 
