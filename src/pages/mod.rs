@@ -14,3 +14,4 @@ pub mod punish_hearing;
 pub mod punish_appeal;
 pub mod punish_transfer;
 pub mod agent;
+pub mod palace;

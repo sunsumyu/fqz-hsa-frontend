@@ -14,6 +14,9 @@ pub fn Sidebar() -> impl IntoView {
                     <A href="/agent" class="menu-item" active_class="active">
                         <i class="el-icon-cpu"></i> "智能稽核助手"
                     </A>
+                    <A href="/palace" class="menu-item" active_class="active">
+                        <i class="el-icon-location"></i> "记忆宫殿 (3D)"
+                    </A>
                 </div>
                 <div class="menu-group">
                     <div class="group-title">"数据中心"</div>

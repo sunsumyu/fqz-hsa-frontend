@@ -46,6 +46,9 @@ pub fn AgentPage() -> impl IntoView {
     // 获取后端模型列表资源
     let models_res = create_resource(|| (), |_| async { crate::api::client::get_models().await });
     
+    // 获取会话历史资源
+    let history_res = create_resource(|| (), |_| async { crate::api::client::get_history().await });
+
     // 滚动锚点
     let chat_history_ref = create_node_ref::<leptos::html::Div>();
 
@@ -55,8 +58,27 @@ pub fn AgentPage() -> impl IntoView {
         }
     };
 
+    // 当历史记录加载完成时，同步到 messages 信号
+    create_effect(move |_| {
+        if let Some(Ok(history)) = history_res.get() {
+            if !history.is_empty() {
+                let msgs = history.into_iter().enumerate().map(|(i, m)| {
+                    (i + 1, m.role, create_rw_signal(m.content))
+                }).collect::<Vec<_>>();
+                
+                set_messages.set(msgs);
+                set_msg_id_counter.set(messages.get().len() + 1);
+                
+                // 加载历史后滚动到底部
+                request_animation_frame(move || scroll_to_bottom());
+            }
+        }
+    });
+
     // 初始化消息 ID
-    set_msg_id_counter.update(|c| *c += 1);
+    create_effect(move |_| {
+        set_msg_id_counter.update(|c| *c += 1);
+    });
 
     let handle_send = move || {
         let msg = input_val.get();
@@ -99,7 +121,7 @@ pub fn AgentPage() -> impl IntoView {
 
                                 // 气泡保活逻辑：即使为空，只要是流的开始，就必须确保 ai_signal 物理存在
                                 if ai_signal.is_none() {
-                                    let ai_id = msg_id_counter.get();
+                                    let ai_id = msg_id_counter.get_untracked();
                                     set_msg_id_counter.update(|c| *c += 1);
                                     let sig = create_rw_signal(String::new());
                                     set_messages.update(|msgs| msgs.push((ai_id, "ai".to_string(), sig)));
@@ -117,7 +139,7 @@ pub fn AgentPage() -> impl IntoView {
                         }
                     }
                     Err(e) => {
-                        let err_id = msg_id_counter.get();
+                        let err_id = msg_id_counter.get_untracked();
                         set_msg_id_counter.update(|c| *c += 1);
                         set_messages.update(|msgs| msgs.push((err_id, "ai".to_string(), create_rw_signal(format!("错误: {}", e)))));
                     }

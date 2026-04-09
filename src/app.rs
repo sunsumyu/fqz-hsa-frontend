@@ -16,6 +16,7 @@ use crate::pages::punish_hearing::PunishHearingPage;
 use crate::pages::punish_appeal::PunishAppealPage;
 use crate::pages::punish_transfer::PunishTransferPage;
 use crate::pages::agent::AgentPage;
+use crate::pages::palace::PalacePage;
 use crate::components::sidebar::Sidebar;
 use crate::components::template_editor::TemplateEditor;
 
@@ -46,6 +47,7 @@ pub fn App() -> impl IntoView {
                         <Route path="/punish-appeal" view=PunishAppealPage/>
                         <Route path="/punish-transfer" view=PunishTransferPage/>
                         <Route path="/agent" view=AgentPage/>
+                        <Route path="/palace" view=PalacePage/>
                         <Route path="/document-edit/:id" view=AuditPage/>
                         <Route path="/*any" view=NotFound/>
                     </Routes>
