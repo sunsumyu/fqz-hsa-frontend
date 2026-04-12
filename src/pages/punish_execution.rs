@@ -1,5 +1,4 @@
 use leptos::*;
-use leptos_router::use_navigate;
 use crate::components::data_table::{DataTable, TableColumn};
 use crate::components::modal::Modal;
 use crate::components::template_editor::TemplateEditor;

@@ -151,3 +151,21 @@ pub async fn post_chat_stream(message: &str, model_id: Option<String>) -> Result
 
     Ok(stream)
 }
+
+pub async fn update_state(findings: &str) -> Result<(), String> {
+    let body = json!({ "findings": [findings] });
+    
+    let _: serde_json::Value = post("/agent/update_state", &body).await?;
+    web_sys::console::log_1(&"State update successful".into());
+    Ok(())
+}
+
+pub async fn fork_session(source: &str, target: &str) -> Result<String, String> {
+    let body = json!({
+        "sourceSessionId": source,
+        "targetSessionId": target
+    });
+    
+    let res: serde_json::Value = post("/agent/fork", &body).await?;
+    Ok(res["targetSession"].as_str().unwrap_or(target).to_string())
+}

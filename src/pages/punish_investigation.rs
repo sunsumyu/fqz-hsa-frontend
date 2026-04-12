@@ -3,7 +3,7 @@ use leptos_router::use_navigate;
 use crate::components::data_table::{DataTable, TableColumn};
 use crate::components::modal::Modal;
 use crate::components::template_editor::TemplateEditor;
-use crate::api::models::{InspectionTask, InspectionTasksNoteAttrValVO, WrapperResponse, InspectionTasksNotePunishSubmitReq};
+use crate::api::models::{InspectionTask, InspectionTasksNoteAttrValVO};
 use crate::api::constants::PunishStatus;
 
 #[component]
