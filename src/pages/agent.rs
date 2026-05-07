@@ -9,11 +9,104 @@ fn render_markdown(text: &str) -> String {
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
     
-    let parser = Parser::new_ext(text, options);
+    // [V15.5] 视觉强固：预清理所有非渲染类系统标签
+    let mut processed = text.to_string();
+    
+    // 移除所有 [[[...]]] 标签 (除了前端渲染协议要求的)
+    let protocol_tags = ["AUDIT_REPORT_V2", "END_REPORT"];
+    while let Some(start) = processed.find("[[[") {
+        if let Some(end) = processed[start..].find("]]]") {
+            let tag_content = &processed[start + 3..start + end];
+            
+            let mut should_keep = false;
+            for p in protocol_tags.iter() {
+                if tag_content.contains(p) {
+                    should_keep = true;
+                    break;
+                }
+            }
+            
+            if !should_keep {
+                processed.replace_range(start..start + end + 3, "");
+            } else {
+                // 跳转过该标签，避免死循环
+                break; 
+            }
+        } else { break; }
+    }
+
+    let is_v2_report = processed.contains("[[[AUDIT_REPORT_V2]]]");
+
+    if is_v2_report {
+        // 1. 预处理：剥离协议头尾
+        processed = processed.replace("[[[AUDIT_REPORT_V2]]]", "<div class=\"audit-v2-container\">")
+                             .replace("[[[END_REPORT]]]", "</div>");
+
+        // 2. 核心指标组件：<StatGrid> -> <div class="audit-stat-grid">
+        processed = processed.replace("<StatGrid>", "<div class=\"audit-stat-grid\">")
+                             .replace("</StatGrid>", "</div>");
+        
+        // 3. 单体指标：<Stat label="总额" value="XXX" /> -> 语义化 DOM
+        while let Some(start) = processed.find("<Stat ") {
+            if let Some(end) = processed[start..].find("/>") {
+                let full_tag = &processed[start..start + end + 2];
+                let label = extract_attr(full_tag, "label").unwrap_or_default();
+                let value = extract_attr(full_tag, "value").unwrap_or_default();
+                let trend = extract_attr(full_tag, "trend").unwrap_or_default();
+                let trend_html = if trend == "up" { "<span class=\"trend-up\">↑</span>" } else { "" };
+                
+                let replacement = format!(
+                    "<div class=\"audit-stat-item\"><div class=\"stat-label\">{}</div><div class=\"stat-value\">{}{}</div></div>",
+                    label, value, trend_html
+                );
+                processed = processed.replace(full_tag, &replacement);
+            } else { break; }
+        }
+
+        // 4. 违规卡片：<ViolationCard type="fraud" title="XXX" amount="YYY"> -> Premium Card
+        while let Some(start) = processed.find("<ViolationCard ") {
+            if let Some(tag_end) = processed[start..].find(">") {
+                let opening_tag = &processed[start..start + tag_end + 1];
+                let v_type = extract_attr(opening_tag, "type").unwrap_or("abuse".to_string());
+                let v_title = extract_attr(opening_tag, "title").unwrap_or("未知违规".to_string());
+                let v_amount = extract_attr(opening_tag, "amount").unwrap_or("0".to_string());
+                
+                let replacement_head = format!(
+                    "<div class=\"audit-card risk-{}\"><div class=\"card-badge\">{}</div><div class=\"card-title\">{}</div><div class=\"card-amount\">涉及到金额: {}元</div><div class=\"card-body\">",
+                    v_type, 
+                    if v_type == "fraud" { "严重欺诈" } else if v_type == "abuse" { "违规滥用" } else { "疑点筛查" },
+                    v_title,
+                    v_amount
+                );
+                processed = processed.replace(opening_tag, &replacement_head);
+            } else { break; }
+        }
+        processed = processed.replace("</ViolationCard>", "</div></div>");
+
+        // 5. 证据链：<EvidenceLink> -> 带有链接图标的文本
+        processed = processed.replace("<EvidenceLink>", "<div class=\"evidence-link\">🔗 <span class=\"link-text\">证据追溯: ")
+                             .replace("</EvidenceLink>", "</span></div>");
+    }
+
+    let parser = Parser::new_ext(&processed, options);
     let mut html_output = String::new();
     html::push_html(&mut html_output, parser);
+    
     html_output
 }
+
+// 辅助函数：手动提取属性值
+fn extract_attr(tag: &str, attr: &str) -> Option<String> {
+    let pattern = format!("{}=\"", attr);
+    if let Some(start) = tag.find(&pattern) {
+        let content_start = start + pattern.len();
+        if let Some(end) = tag[content_start..].find("\"") {
+            return Some(tag[content_start..content_start + end].to_string());
+        }
+    }
+    None
+}
+
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -46,6 +139,13 @@ pub fn AgentPage() -> impl IntoView {
         }
     });
 
+    let session_id_full = crate::api::client::get_or_create_session_id();
+    let session_display = if session_id_full.len() > 8 {
+        format!("...{}", &session_id_full[session_id_full.len() - 8..])
+    } else {
+        session_id_full.clone()
+    };
+
     let (input_val, set_input_val) = create_signal(String::new());
     let (msg_id_counter, set_msg_id_counter) = create_signal(0usize);
     
@@ -70,8 +170,13 @@ pub fn AgentPage() -> impl IntoView {
     let (selected_model, set_selected_model) = create_signal(None::<String>);
     // 实时运行中的引擎身份 [V4.5.4] 强制初始化为非 None 字符以示正在链接
     let (active_engine, set_active_engine) = create_signal(String::from("算力并网中..."));
+    // [V15.5] 实时业务逻辑状态显示
+    let (current_status, set_current_status) = create_signal(String::from("系统待命中"));
     
-    // 获取后端模型列表资源
+    // [V35.0] 实时算力治理统计 (HUD)
+    let (total_tokens, set_total_tokens) = create_signal(0usize);
+    let (total_cost, set_total_cost) = create_signal(0.0f64);
+    let (current_role, set_current_role) = create_signal(String::from("IDLE"));
     let models_res = create_resource(|| (), |_| async { crate::api::client::get_models().await });
     
     // 获取会话历史资源
@@ -91,9 +196,12 @@ pub fn AgentPage() -> impl IntoView {
     create_effect(move |_| {
         if let Some(Ok(history)) = history_res.get() {
             if !history.is_empty() {
-                let msgs = history.into_iter().enumerate().map(|(i, m)| {
-                    (i + 1, m.role, create_rw_signal(m.content))
-                }).collect::<Vec<_>>();
+                let msgs = history.into_iter()
+                    .enumerate()
+                    .map(|(i, m)| {
+                        // [V15.6] 角色归一化：由于后端 API 已收敛 role，这里仅做格式适配
+                        (i + 1, m.role, create_rw_signal(m.content))
+                    }).collect::<Vec<_>>();
                 
                 messages.set(msgs);
                 set_msg_id_counter.set(messages.get().len() + 1);
@@ -151,6 +259,17 @@ pub fn AgentPage() -> impl IntoView {
         request_animation_frame(move || scroll_to_bottom());
 
         let msg_static = msg.clone();
+        
+        let try_process_queue = move || {
+            if !loading.get_untracked() {
+                let mut popped = None;
+                set_pending_queue.update(|q| popped = q.pop_front());
+                if let Some(m) = popped {
+                    set_next_task_trigger.set(Some(m));
+                }
+            }
+        };
+
         spawn_local(async move {
             use futures::StreamExt;
             let model_id_snapshot = selected_model.get_untracked();
@@ -159,120 +278,150 @@ pub fn AgentPage() -> impl IntoView {
                 Ok(mut stream) => {
                     while let Some(chunk_result) = stream.next().await {
                         if let Ok(mut chunk) = chunk_result {
-                            // 协议拦截逻辑 (保持不变)
-                            let eng_start_tag = "[[[ENGINE:";
-                            let eng_end_tag = "]]]";
-                            if let Some(start) = chunk.find(eng_start_tag) {
-                                if let Some(end) = chunk.find(eng_end_tag) {
-                                    let engine_id = &chunk[start + eng_start_tag.len()..end];
-                                    set_active_engine.set(engine_id.to_string());
-                                    let mut new_chunk = chunk.clone();
-                                    new_chunk.replace_range(start..end + eng_end_tag.len(), "");
-                                    chunk = new_chunk;
+                            // --- [V15.5 协议拦截器增强：支持物理跨包缓存] ---
+                            let mut current_packet_buffer = String::new();
+                            
+                            // 空间遥测与协议包拦截逻辑
+                            loop {
+                                let pal_start_tag = "[[[";
+                                let pal_end_tag = "]]]";
+                                
+                                if let Some(start) = chunk.find(pal_start_tag) {
+                                    if let Some(end_) = chunk[start..].find(pal_end_tag) {
+                                        let end = start + end_ + pal_end_tag.len();
+                                        let packet = &chunk[start..end];
+                                        
+                                        // 4. 资源遥测拦截 (HUD)
+                                        if packet.starts_with("[[[RESOURCE:") {
+                                            let json_str = &packet[12..packet.len()-3];
+                                            // 极简解析，避免引入 serde_json
+                                            if let Some(cost_idx) = json_str.find("'cost':") {
+                                                if let Some(cost_val) = json_str[cost_idx+7..].split(',').next() {
+                                                    if let Ok(c) = cost_val.trim().parse::<f64>() {
+                                                        set_total_cost.update(|curr| *curr += c);
+                                                    }
+                                                }
+                                            }
+                                            if let Some(role_idx) = json_str.find("'role': '") {
+                                                if let Some(role_val) = json_str[role_idx+9..].split('\'').next() {
+                                                    set_current_role.set(role_val.to_string());
+                                                }
+                                            }
+                                            if let Some(prompt_idx) = json_str.find("'prompt':") {
+                                                if let Some(p_val) = json_str[prompt_idx+9..].split(',').next() {
+                                                    if let Ok(p) = p_val.trim().parse::<usize>() {
+                                                        set_total_tokens.update(|curr| *curr += p);
+                                                    }
+                                                }
+                                            }
+                                            if let Some(comp_idx) = json_str.find("'completion':") {
+                                                if let Some(c_val) = json_str[comp_idx+13..].split(',').next().or_else(|| json_str[comp_idx+13..].split('}').next()) {
+                                                    if let Ok(c) = c_val.trim().parse::<usize>() {
+                                                        set_total_tokens.update(|curr| *curr += c);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        // 5. 3D 渲染与 Checkpoint 协议透传
+                                        else {
+                                            process_palace_packet(packet);
+                                        }
+                                        
+                                        // 从内容中抹除该包
+                                        let mut new_chunk = chunk.clone();
+                                        new_chunk.replace_range(start..end, "");
+                                        chunk = new_chunk;
+                                        continue;
+                                    } else {
+                                        // 发现半截包，物理吞噬并等待下一包 (简化版：由于 WASM 环境限制，此处仅清理残留)
+                                        break; 
+                                    }
                                 }
-                            }
-
-                            // Checkpoint/Version 拦截
-                            let cp_tag = "[[[CHECKPOINT:";
-                            let ver_tag = "[[[VERSION:";
-                            if let Some(start) = chunk.find(cp_tag) {
-                                if let Some(end) = chunk[start..].find("]]]") {
-                                    let packet = &chunk[start..start + end + 3];
-                                    #[cfg(target_arch = "wasm32")] { process_palace_packet(packet); }
-                                    let mut new_chunk = chunk.clone();
-                                    new_chunk.replace_range(start..start + end + 3, "");
-                                    chunk = new_chunk;
-                                }
-                            }
-                            if let Some(start) = chunk.find(ver_tag) {
-                                if let Some(end) = chunk[start..].find("]]]") {
-                                    let packet = &chunk[start..start + end + 3];
-                                    #[cfg(target_arch = "wasm32")] { process_palace_packet(packet); }
-                                    let mut new_chunk = chunk.clone();
-                                    new_chunk.replace_range(start..start + end + 3, "");
-                                    chunk = new_chunk;
-                                }
-                            }
-
-                            // 空间遥测拦截
-                            let pal_start_tag = "[[[";
-                            let pal_end_tag = "]]]";
-                            if let Some(start) = chunk.find(pal_start_tag) {
-                                if let Some(end_) = chunk[start..].find(pal_end_tag) {
-                                    let end = start + end_ + pal_end_tag.len();
-                                    let packet = &chunk[start..end];
-                                    process_palace_packet(packet);
-                                    let mut new_chunk = chunk.clone();
-                                    new_chunk.replace_range(start..end, "");
-                                    chunk = new_chunk;
-                                }
+                                break;
                             }
 
                             if !chunk.is_empty() {
+                                // [V15.5] 诊断日志：确认流式数据到达率
+                                logging::log!("<<< CHUNK RECEIVED: {} chars", chunk.len());
+                                
+                                // 强制触发响应式更新
                                 ai_sig.update(|s| s.push_str(&chunk));
-                                scroll_to_bottom();
+                                
+                                // 强制触发一次微任务调度，确保 UI 线程有机会更新
+                                request_animation_frame(move || {
+                                    scroll_to_bottom();
+                                });
                             }
                         }
                     }
                 }
                 Err(e) => {
                     let err_str = e.to_string();
-                    if err_str.contains("[[[OUT_OF_TOKEN:") {
-                        if let Some(pos) = err_str.find("建议切换到: ") {
-                            let suggestion = &err_str[pos + "建议切换到: ".len()..];
-                            set_token_error_suggest.set(Some(suggestion.trim().to_string()));
-                        } else {
-                            set_token_error_suggest.set(Some("None".to_string()));
-                        }
+                    let error_feedback = if err_str.contains("403") {
+                        "[审计权限异常]: 当前模型额度已耗尽 (403)，请切换模型。".to_string()
+                    } else if err_str.contains("SystemMessage") {
+                        "[对话协议冲突]: 系统状态同步异常，请刷新页面重新开始。".to_string()
                     } else {
-                        ai_sig.set(format!("系统逻辑中断: {}", err_str));
-                    }
+                        format!("[系统逻辑中断]: {}", err_str)
+                    };
+                    ai_sig.set(error_feedback);
                 }
             }
+            // [V4.5.9] 强制复位加载态，确保按钮和 UI 指示器能恢复可用
             set_loading.set(false);
+            try_process_queue();
         });
     };
 
-    // 队列监听器：负责从队列中提取下一个任务到触发器
-    create_effect(move |_| {
-        let is_loading = loading.get();
-        let queue_empty = pending_queue.with(|q| q.is_empty());
-        
-        if !is_loading && !queue_empty {
-            let mut next_msg = None;
-            set_pending_queue.update(|q| {
-                next_msg = q.pop_front();
-            });
-            if let Some(msg) = next_msg {
-                set_next_task_trigger.set(Some(msg));
-            }
-        }
-    });
-
-    // 任务执行器：监听触发器并执行异步处理
+    // 唯一合法的触发器监听：利用 event-bus 模式确保单线程队列安全消费
     create_effect(move |_| {
         if let Some(msg) = next_task_trigger.get() {
-            // 立即重置触发器以防重复执行，并进入处理流程
             set_next_task_trigger.set(None);
             process_message(msg);
         }
     });
 
     let handle_send = move || {
-        let msg = input_val.get();
+        let msg = input_val.get_untracked();
         if !msg.is_empty() {
             set_pending_queue.update(|q| q.push_back(msg.clone()));
             set_input_val.set(String::new());
+            
+            if !loading.get_untracked() {
+                let mut popped = None;
+                set_pending_queue.update(|q| popped = q.pop_front());
+                if let Some(m) = popped {
+                    set_next_task_trigger.set(Some(m));
+                }
+            }
         }
     };
 
     view! {
         <div class="page-container" style="background: #f0f2f5; padding: 24px;">
             <header class="page-header" style="background: transparent; border: none; padding: 0 0 24px 0; display: flex; justify-content: space-between; align-items: center;">
-                <h2 style="font-size: 24px; font-weight: 700; color: #1a1a1a;">
+                <h2 style="font-size: 24px; font-weight: 700; color: #1a1a1a; display: flex; align-items: center; gap: 16px;">
                     "智能稽核助手"
-                    <span style="font-size: 14px; font-weight: 400; color: #67c23a; margin-left: 12px; vertical-align: middle;">
+                    <button 
+                        type="button"
+                        on:click=move |_| {
+                            logging::log!(">>> [UI] 正在执行会话硬重置...");
+                            crate::api::client::reset_session_id();
+                            if let Some(win) = web_sys::window() {
+                                let _ = win.location().set_href("/agent");
+                            }
+                        }
+                        style="background: #409eff; color: white; border: none; padding: 4px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: all 0.2s; box-shadow: 0 2px 8px rgba(64,158,255,0.3);"
+                        on:mouse_over=move |e| { let _ = event_target::<web_sys::HtmlElement>(&e).style().set_property("background", "#66b1ff"); }
+                        on:mouse_out=move |e| { let _ = event_target::<web_sys::HtmlElement>(&e).style().set_property("background", "#409eff"); }
+                    >
+                        <i class="el-icon-plus"></i> "新对话"
+                    </button>
+                    <span style="font-size: 14px; font-weight: 400; color: #67c23a; vertical-align: middle;">
                         <span class="typing-dot"></span> " AI 在线预览"
+                    </span>
+                    <span style="font-size: 11px; font-weight: 400; color: #909399; margin-left: 8px; font-family: monospace; background: #eef1f6; padding: 2px 6px; border-radius: 4px;">
+                        "SSET_ID: " {session_display}
                     </span>
                 </h2>
                 
@@ -297,7 +446,21 @@ pub fn AgentPage() -> impl IntoView {
                                 {move || models_res.get().map(|res| {
                                     match res {
                                         Ok(models) => models.into_iter().map(|m| {
-                                            view! { <option value=move || m.id.clone()>{m.name.clone()}</option> }
+                                            let display_name = if !m.is_available {
+                                                format!("{} ({})", m.name, m.status_msg)
+                                            } else {
+                                                m.name.clone()
+                                            };
+                                            let is_disabled = !m.is_available;
+                                            view! { 
+                                                <option 
+                                                    value=move || m.id.clone() 
+                                                    prop:disabled=is_disabled
+                                                    style=move || if is_disabled { "color: #c0c4cc;" } else { "" }
+                                                >
+                                                    {display_name}
+                                                </option> 
+                                            }
                                         }).collect_view(),
                                         Err(_) => view! { <option disabled=true>"列表获取请求受阻"</option> }.into_view()
                                     }
@@ -312,15 +475,27 @@ pub fn AgentPage() -> impl IntoView {
                         <span style="font-weight: 500;">{move || active_engine.get()}</span>
                     </div>
 
-                    <div class="security-toggle" style="display: flex; align-items: center; gap: 8px; font-size: 14px; color: #606266; background: #fff; padding: 8px 16px; border-radius: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.05);">
-                        <label style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
-                            <input 
-                                type="checkbox" 
-                                prop:checked=disable_security_mask
-                                on:change=move |e| set_disable_security_mask.set(event_target_checked(&e))
-                            />
-                            "全面脱敏"
-                        </label>
+                    // [V15.5] 业务状态指示器 (业务视角)
+                    <div style="font-size: 13px; color: #409eff; background: rgba(64,158,255,0.1); padding: 4px 12px; border-radius: 20px; border: 1px solid rgba(64,158,255,0.2); display: flex; align-items: center; gap: 6px;">
+                        <i class="el-icon-loading" style="font-size: 14px;"></i>
+                        <span style="font-weight: 600;">{move || current_status.get()}</span>
+                    </div>
+
+                    </div>
+
+                // [V35.0] 实时算力治理 HUD (实时监控面板)
+                <div class="governance-hud" style="display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap;">
+                    <div class="hud-item" style="background: rgba(30,41,59,0.9); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.1); padding: 12px 20px; border-radius: 12px; min-width: 140px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                        <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">"当前链路角色"</div>
+                        <div style="font-size: 16px; font-weight: 700; color: #38bdf8; font-family: monospace;">{move || current_role.get()}</div>
+                    </div>
+                    <div class="hud-item" style="background: rgba(30,41,59,0.9); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.1); padding: 12px 20px; border-radius: 12px; min-width: 140px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                        <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">"累计 Token 消耗"</div>
+                        <div style="font-size: 16px; font-weight: 700; color: #facc15;">{move || total_tokens.get()}</div>
+                    </div>
+                    <div class="hud-item" style="background: rgba(30,41,59,0.9); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.1); padding: 12px 20px; border-radius: 12px; min-width: 140px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                        <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">"当前会话预估成本"</div>
+                        <div style="font-size: 16px; font-weight: 700; color: #fb7185;">"¥" {move || format!("{:.4}", total_cost.get())}</div>
                     </div>
                 </div>
             </header>
@@ -336,23 +511,28 @@ pub fn AgentPage() -> impl IntoView {
                                 
                                 view! { 
                                     <div class=class>
-                                        <div inner_html=move || render_markdown(&content_sig.get())></div>
-                                        
-                                        // [V4.5.5] 增强型气泡动画逻辑：只要 content 内容不含文字且处于 loading 态就强制显示
-                                        {move || (sender == "ai" && content_sig.get().chars().filter(|c| !c.is_whitespace()).count() == 0 && loading.get()).then(|| view! {
-                                            <div class="loading-content-placeholder" style="display: flex; align-items: center; gap: 8px; padding-top: 4px;">
-                                                <span class="typing-text" style="font-size: 0.85em; opacity: 0.7; color: #409eff; font-weight: 600;">"正在获取专家结论"</span>
-                                                <div class="dot-jump">
-                                                    <span class="typing-dot" style="background: #409eff"></span>
-                                                    <span class="typing-dot" style="background: #409eff; animation-delay: 0.2s"></span>
-                                                    <span class="typing-dot" style="background: #409eff; animation-delay: 0.4s"></span>
-                                                </div>
-                                            </div>
-                                        })}
+                                        <div 
+                                            class="chat-content markdown-content"
+                                            inner_html=move || render_markdown(&content_sig.get())
+                                        ></div>
                                     </div>
                                 }
                             }
                         />
+
+                        // [V4.5.9] 全局式加载指示器：确保永远处于消息列表最底部，且全局唯一
+                        {move || loading.get().then(|| view! {
+                            <div class="chat-bubble bubble-ai" style="margin-bottom: 24px; width: fit-content;">
+                                <div class="loading-content-placeholder" style="display: flex; align-items: center; gap: 8px;">
+                                    <span class="typing-text" style="font-size: 0.85em; opacity: 0.7; color: #409eff; font-weight: 600;">"引擎正在深度审计中..."</span>
+                                    <div class="dot-jump">
+                                        <span class="typing-dot" style="background: #409eff"></span>
+                                        <span class="typing-dot" style="background: #409eff; animation-delay: 0.2s"></span>
+                                        <span class="typing-dot" style="background: #409eff; animation-delay: 0.4s"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        })}
                     </div>
 
                     <div class="chat-input-area">

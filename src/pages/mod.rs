@@ -15,3 +15,4 @@ pub mod punish_appeal;
 pub mod punish_transfer;
 pub mod agent;
 pub mod palace;
+pub mod memory_auditor;

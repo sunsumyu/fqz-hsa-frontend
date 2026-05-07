@@ -17,6 +17,7 @@ use crate::pages::punish_appeal::PunishAppealPage;
 use crate::pages::punish_transfer::PunishTransferPage;
 use crate::pages::agent::AgentPage;
 use crate::pages::palace::PalacePage;
+use crate::pages::memory_auditor::MemoryAuditorPage;
 use crate::components::sidebar::Sidebar;
 use crate::components::template_editor::TemplateEditor;
 
@@ -30,27 +31,30 @@ pub fn App() -> impl IntoView {
             <div class="app-layout">
                 <Sidebar />
                 <main class="content-main">
-                    <Routes>
-                        <Route path="" view=DashboardPage/>
-                        <Route path="/clue-audit" view=ClueAuditPage/>
-                        <Route path="/audit-query" view=AuditQueryPage/>
-                        <Route path="/confirm-finish" view=ConfirmFinishPage/>
-                        <Route path="/punish-filing" view=PunishFilingPage/>
-                        <Route path="/punish-investigation" view=PunishInvestigationPage/>
-                        <Route path="/punish-legal" view=PunishLegalPage/>
-                        <Route path="/punish-notice" view=PunishNoticePage/>
-                        <Route path="/punish-decision" view=PunishDecisionPage/>
-                        <Route path="/punish-execution" view=PunishExecutionPage/>
-                        <Route path="/ledger" view=LedgerPage/>
-                        <Route path="/case-library" view=CaseLibraryPage/>
-                        <Route path="/punish-hearing" view=PunishHearingPage/>
-                        <Route path="/punish-appeal" view=PunishAppealPage/>
-                        <Route path="/punish-transfer" view=PunishTransferPage/>
-                        <Route path="/agent" view=AgentPage/>
-                        <Route path="/palace" view=PalacePage/>
-                        <Route path="/document-edit/:id" view=AuditPage/>
-                        <Route path="/*any" view=NotFound/>
-                    </Routes>
+                    <div class="view-container">
+                        <Routes>
+                            <Route path="" view=DashboardPage/>
+                            <Route path="/clue-audit" view=ClueAuditPage/>
+                            <Route path="/audit-query" view=AuditQueryPage/>
+                            <Route path="/confirm-finish" view=ConfirmFinishPage/>
+                            <Route path="/punish-filing" view=PunishFilingPage/>
+                            <Route path="/punish-investigation" view=PunishInvestigationPage/>
+                            <Route path="/punish-legal" view=PunishLegalPage/>
+                            <Route path="/punish-notice" view=PunishNoticePage/>
+                            <Route path="/punish-decision" view=PunishDecisionPage/>
+                            <Route path="/punish-execution" view=PunishExecutionPage/>
+                            <Route path="/ledger" view=LedgerPage/>
+                            <Route path="/case-library" view=CaseLibraryPage/>
+                            <Route path="/punish-hearing" view=PunishHearingPage/>
+                            <Route path="/punish-appeal" view=PunishAppealPage/>
+                            <Route path="/punish-transfer" view=PunishTransferPage/>
+                            <Route path="/agent" view=AgentPage/>
+                            <Route path="/palace" view=PalacePage/>
+                            <Route path="/memory-auditor" view=MemoryAuditorPage/>
+                            <Route path="/document-edit/:id" view=AuditPage/>
+                            <Route path="/*any" view=NotFound/>
+                        </Routes>
+                    </div>
                 </main>
             </div>
         </Router>
