@@ -3,3 +3,4 @@ pub mod data_table;
 pub mod template_editor;
 pub mod modal;
 pub mod comparison_modal;
+pub mod tenant_selector;

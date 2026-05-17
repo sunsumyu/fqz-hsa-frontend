@@ -10,7 +10,11 @@ where
     R: for<'de> Deserialize<'de>,
 {
     let full_url = format!("{}{}", BASE_URL, url);
+    let storage = web_sys::window().unwrap().local_storage().unwrap().unwrap();
+    let tenant_id = storage.get_item("hsa_tenant_id").unwrap().unwrap_or_else(|| "default".to_string());
+
     let response = Request::post(&full_url)
+        .header("X-Tenant-Id", &tenant_id)
         .json(body)
         .map_err(|e| e.to_string())?
         .send()
@@ -29,7 +33,9 @@ where
     R: for<'de> Deserialize<'de>,
 {
     let full_url = format!("{}{}", BASE_URL, url);
+    let tenant_id = get_current_tenant_id();
     let response = Request::get(&full_url)
+        .header("X-Tenant-Id", &tenant_id)
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -43,8 +49,10 @@ where
 
 pub async fn post_chat(message: &str) -> Result<String, String> {
     let full_url = format!("{}/agent/chat", BASE_URL);
+    let tenant_id = get_current_tenant_id();
     let response = Request::post(&full_url)
         .header("Content-Type", "text/plain")
+        .header("X-Tenant-Id", &tenant_id)
         .body(message)
         .map_err(|e| e.to_string())?
         .send()
@@ -60,10 +68,12 @@ pub async fn post_chat(message: &str) -> Result<String, String> {
 
 pub async fn get_history() -> Result<Vec<ChatMessage>, String> {
     let session_id = get_or_create_session_id();
+    let tenant_id = get_current_tenant_id();
     let full_url = format!("{}/agent/history", BASE_URL);
     
     let response = Request::get(&full_url)
         .header("X-Session-Id", &session_id)
+        .header("X-Tenant-Id", &tenant_id)
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -103,6 +113,11 @@ pub fn reset_session_id() -> String {
     new_id
 }
 
+pub fn get_current_tenant_id() -> String {
+    let storage = web_sys::window().unwrap().local_storage().unwrap().unwrap();
+    storage.get_item("hsa_tenant_id").unwrap().unwrap_or_else(|| "default".to_string())
+}
+
 use wasm_streams::ReadableStream;
 use futures::StreamExt;
 use js_sys::Uint8Array;
@@ -136,11 +151,13 @@ pub async fn post_chat_stream(message: &str, model_id: Option<String>) -> Result
     });
 
     let session_id = get_or_create_session_id();
-    web_sys::console::log_1(&format!(">>> [DEBUG] API 调用开始，当前 Session ID: {}", session_id).into());
+    let tenant_id = get_current_tenant_id();
+    web_sys::console::log_1(&format!(">>> [DEBUG] API 调用开始，当前 Session ID: {}, Tenant ID: {}", session_id, tenant_id).into());
 
     let response = Request::post(&full_url)
         .header("Content-Type", "application/json")
         .header("X-Session-Id", &session_id)
+        .header("X-Tenant-Id", &tenant_id)
         .json(&body_json)
         .map_err(|e| e.to_string())?
         .send()

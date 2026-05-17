@@ -18,13 +18,19 @@ use crate::pages::punish_transfer::PunishTransferPage;
 use crate::pages::agent::AgentPage;
 use crate::pages::palace::PalacePage;
 use crate::pages::memory_auditor::MemoryAuditorPage;
+use crate::pages::portal::PortalPage;
 use crate::components::sidebar::Sidebar;
 use crate::components::template_editor::TemplateEditor;
+use crate::components::tenant_selector::{TenantSelector, TenantContext, get_initial_tenant};
 
 #[component]
 pub fn App() -> impl IntoView {
     let (disable_security_mask, set_disable_security_mask) = create_signal(false);
     provide_context((disable_security_mask, set_disable_security_mask));
+
+    // [V181.0] 多租户状态管理
+    let (tenant_id, set_tenant_id) = create_signal(get_initial_tenant());
+    provide_context(TenantContext { tenant_id, set_tenant_id });
 
     view! {
         <Router>
@@ -51,6 +57,7 @@ pub fn App() -> impl IntoView {
                             <Route path="/agent" view=AgentPage/>
                             <Route path="/palace" view=PalacePage/>
                             <Route path="/memory-auditor" view=MemoryAuditorPage/>
+                            <Route path="/portal" view=PortalPage/>
                             <Route path="/document-edit/:id" view=AuditPage/>
                             <Route path="/*any" view=NotFound/>
                         </Routes>

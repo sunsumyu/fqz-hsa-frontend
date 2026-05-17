@@ -8,7 +8,14 @@ pub fn Sidebar() -> impl IntoView {
             <div class="sidebar-logo">
                 "全生命周期"<span>"稽核平台"</span>
             </div>
+            <crate::components::tenant_selector::TenantSelector />
             <nav class="menu-list">
+                <div class="menu-group">
+                    <div class="group-title">"指挥中枢"</div>
+                    <A href="/portal" class="menu-item" active_class="active">
+                        <i class="el-icon-monitor"></i> "审计指挥门户"
+                    </A>
+                </div>
                 <div class="menu-group">
                     <div class="group-title">"智能辅助"</div>
                     <A href="/agent" class="menu-item" active_class="active">

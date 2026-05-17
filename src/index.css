@@ -1564,3 +1564,45 @@ body {
     padding: 12px 14px !important;
     color: #1e293b !important;
 }
+
+/* [V181.0] Tenant Selector Styling */
+.tenant-selector {
+    padding: 16px 24px;
+    background: #002140;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    margin-bottom: 8px;
+}
+
+.selector-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.45);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.tenant-select {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    color: white;
+    padding: 6px 10px;
+    font-size: 13px;
+    outline: none;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.tenant-select:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: var(--primary-color);
+}
+
+.tenant-select option {
+    background: #001529;
+    color: white;
+}
